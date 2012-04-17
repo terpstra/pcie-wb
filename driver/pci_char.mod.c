@@ -20,3 +20,4 @@ __attribute__((section(".modinfo"))) =
 "depends=";
 
 MODULE_ALIAS("pci:v00001172d00000004sv*sd*bc*sc*i*");
+MODULE_ALIAS("pci:v00001002d00004750sv*sd*bc*sc*i*");
