@@ -169,6 +169,8 @@ static int __init wishbone_init(void)
 		err = -EIO;
 		goto fail_class;
 	}
+	
+	return 0;
 
 fail_class:
 	class_destroy(wishbone_class);
