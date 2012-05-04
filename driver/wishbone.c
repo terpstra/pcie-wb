@@ -51,7 +51,7 @@ static void etherbone_process(struct etherbone_context* context)
 {
 	struct wishbone *wb;
 	const struct wishbone_operations *wops;
-	unsigned int size, left, i, record_len = 0;
+	unsigned int size, left, i, record_len;
 	unsigned char *buf;
 	
 	if (context->state == header) {
@@ -77,7 +77,6 @@ static void etherbone_process(struct etherbone_context* context)
 	size = RING_PROC_LEN(context);
 	
 	for (left = size; left >= 4; left -= record_len) {
-		unsigned int record_len;
 		unsigned char flags, be, wcount, rcount;
 		
 		/* Determine record size */
@@ -191,7 +190,7 @@ static ssize_t char_aio_read(struct kiocb *iocb, const struct iovec *iov, unsign
 	mutex_lock(&context->mutex);
 	
 	ring_len = RING_READ_LEN(context);
-	len = max_t(unsigned int, ring_len, iov_len);
+	len = min_t(unsigned int, ring_len, iov_len);
 	
 	/* How far till we must wrap?  */
 	buf_len = sizeof(context->buf) - context->sent;
@@ -210,6 +209,9 @@ static ssize_t char_aio_read(struct kiocb *iocb, const struct iovec *iov, unsign
 	
 	mutex_unlock(&context->mutex);
 	
+	if (len == 0 && (filep->f_flags & O_NONBLOCK) != 0)
+		return -EAGAIN;
+	
 	return len;
 }
 
@@ -224,7 +226,7 @@ static ssize_t char_aio_write(struct kiocb *iocb, const struct iovec *iov, unsig
 	mutex_lock(&context->mutex);
 	
 	ring_len = RING_WRITE_LEN(context);
-	len = max_t(unsigned int, ring_len, iov_len);
+	len = min_t(unsigned int, ring_len, iov_len);
 	
 	/* How far till we must wrap?  */
 	buf_len = sizeof(context->buf) - context->received;
@@ -245,6 +247,9 @@ static ssize_t char_aio_write(struct kiocb *iocb, const struct iovec *iov, unsig
 	kill_fasync(&context->fasync, SIGIO, POLL_IN);
 	
 	mutex_unlock(&context->mutex);
+	
+	if (len == 0 && (filep->f_flags & O_NONBLOCK) != 0)
+		return -EAGAIN;
 	
 	return len;
 }

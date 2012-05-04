@@ -110,9 +110,18 @@ void wb_write(struct wishbone* wb, wb_addr_t addr, wb_data_t data)
 	}
 	
 	switch (dev->width) {
-	case 4:	iowrite32(data, window + (addr & WINDOW_LOW)); break;
-	case 2: iowrite16(data >> dev->shift, window + (addr & WINDOW_LOW) + dev->low_addr); break;
-	case 1: iowrite8 (data >> dev->shift, window + (addr & WINDOW_LOW) + dev->low_addr); break;
+	case 4:	
+		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": iowrite32(0x%x, 0x%x)\n", data, addr);
+		iowrite32(data, window + (addr & WINDOW_LOW)); 
+		break;
+	case 2: 
+		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": iowrite16(0x%x, 0x%x)\n", data >> dev->shift, addr + dev->low_addr);
+		iowrite16(data >> dev->shift, window + (addr & WINDOW_LOW) + dev->low_addr); 
+		break;
+	case 1: 
+		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": iowrite8(0x%x, 0x%x)\n", data >> dev->shift, addr + dev->low_addr);
+		iowrite8 (data >> dev->shift, window + (addr & WINDOW_LOW) + dev->low_addr); 
+		break;
 	}
 }
 
@@ -136,9 +145,15 @@ wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 	rmb();	// has to be executed before reading
 	
 	switch (dev->width) {
-	case 4:	return ((wb_data_t)ioread32(window + (addr & WINDOW_LOW)));
-	case 2: return ((wb_data_t)ioread16(window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
-	case 1: return ((wb_data_t)ioread8 (window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+	case 4:	
+		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread32(0x%x)\n", addr);
+		return ((wb_data_t)ioread32(window + (addr & WINDOW_LOW)));
+	case 2: 
+		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread32(0x%x)\n", addr + dev->low_addr);
+		return ((wb_data_t)ioread16(window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+	case 1: 
+		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread32(0x%x)\n", addr + dev->low_addr);
+		return ((wb_data_t)ioread8 (window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
 	}
 	return 0;
 }
