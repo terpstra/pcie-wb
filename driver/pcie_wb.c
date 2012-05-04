@@ -29,7 +29,7 @@
 
 static unsigned int debug = 0;
 
-void wb_cycle(struct wishbone* wb, int on)
+static void wb_cycle(struct wishbone* wb, int on)
 {
 	struct pcie_wb_dev* dev;
 	unsigned char* control;
@@ -44,7 +44,7 @@ void wb_cycle(struct wishbone* wb, int on)
 	if (!on) mutex_unlock(&dev->mutex);
 }
 
-void wb_byteenable(struct wishbone* wb, unsigned char be)
+static void wb_byteenable(struct wishbone* wb, unsigned char be)
 {
 	struct pcie_wb_dev* dev;
 	
@@ -92,7 +92,7 @@ void wb_byteenable(struct wishbone* wb, unsigned char be)
 	}
 }
 
-void wb_write(struct wishbone* wb, wb_addr_t addr, wb_data_t data)
+static void wb_write(struct wishbone* wb, wb_addr_t addr, wb_data_t data)
 {
 	struct pcie_wb_dev* dev;
 	unsigned char* control;
@@ -125,7 +125,7 @@ void wb_write(struct wishbone* wb, wb_addr_t addr, wb_data_t data)
 	}
 }
 
-wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
+static wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 {
 	struct pcie_wb_dev* dev;
 	unsigned char* control;
@@ -158,11 +158,31 @@ wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 	return 0;
 }
 
+static wb_data_t wb_read_cfg(struct wishbone *wb, wb_addr_t addr)
+{
+	struct pcie_wb_dev* dev;
+	unsigned char* control;
+	
+	dev = container_of(wb, struct pcie_wb_dev, wb);
+	control = dev->pci_res[0].addr;
+	
+	rmb();	// has to be executed before reading
+	
+	switch (addr) {
+	case 0:  return ioread32(control + ERROR_FLAG_HIGH);
+	case 4:  return ioread32(control + ERROR_FLAG_LOW);
+	case 8:  return 0;        // ioread32(control + SDWB_ADDRESS_HIGH);
+	case 12: return 0x300000; // ioread32(control + SDWB_ADDRESS_LOW);
+	default: return 0;
+	}
+}
+
 static const struct wishbone_operations wb_ops = {
 	.cycle      = wb_cycle,
 	.byteenable = wb_byteenable,
 	.write      = wb_write,
 	.read       = wb_read,
+	.read_cfg   = wb_read_cfg,
 };
 
 #if 0

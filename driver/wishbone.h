@@ -26,6 +26,7 @@ struct wishbone_operations
 	void (*byteenable)(struct wishbone* wb, unsigned char mask);
 	void (*write)(struct wishbone* wb, wb_addr_t addr, wb_data_t);
 	wb_data_t (*read)(struct wishbone* wb, wb_addr_t addr);
+	wb_data_t (*read_cfg)(struct wishbone* wb, wb_addr_t addr);
 };
 
 /* One per wishbone backend hardware */

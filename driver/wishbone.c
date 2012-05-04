@@ -102,18 +102,26 @@ static void etherbone_process(struct etherbone_context* context)
 			wb_addr_t base_address;
 			unsigned char j;
 			int wff = flags & ETHERBONE_WFF;
+			int wca = flags & ETHERBONE_WCA;
 			
 			/* Erase the header */
 			eb_from_cpu(buf+i, 0);
 			i = RING_INDEX(i + sizeof(wb_data_t));
 			base_address = eb_to_cpu(buf+i);
 			
-			for (j = wcount; j > 0; --j) {
-				eb_from_cpu(buf+i, 0);
-				i = RING_INDEX(i + sizeof(wb_data_t));
-				wops->write(wb, base_address, eb_to_cpu(buf+i));
-				
-				if (!wff) base_address += sizeof(wb_data_t);
+			if (wca) {
+				for (j = wcount; j > 0; --j) {
+					eb_from_cpu(buf+i, 0);
+					i = RING_INDEX(i + sizeof(wb_data_t));
+				}
+			} else {
+				for (j = wcount; j > 0; --j) {
+					eb_from_cpu(buf+i, 0);
+					i = RING_INDEX(i + sizeof(wb_data_t));
+					wops->write(wb, base_address, eb_to_cpu(buf+i));
+					
+					if (!wff) base_address += sizeof(wb_data_t);
+				}
 			}
 		}
 		
@@ -126,13 +134,21 @@ static void etherbone_process(struct etherbone_context* context)
 		
 		if (rcount > 0) {
 			unsigned char j;
+			int rca = flags & ETHERBONE_RCA;
 			
 			/* Move past header, and leave BaseRetAddr intact */
 			i = RING_INDEX(i + sizeof(wb_data_t) + sizeof(wb_data_t));
 			
-			for (j = rcount; j > 0; --j) {
-				eb_from_cpu(buf+i, wops->read(wb, eb_to_cpu(buf+i)));
-				i = RING_INDEX(i + sizeof(wb_data_t));
+			if (rca) {
+				for (j = rcount; j > 0; --j) {
+					eb_from_cpu(buf+i, wops->read_cfg(wb, eb_to_cpu(buf+i)));
+					i = RING_INDEX(i + sizeof(wb_data_t));
+				}
+			} else {
+				for (j = rcount; j > 0; --j) {
+					eb_from_cpu(buf+i, wops->read(wb, eb_to_cpu(buf+i)));
+					i = RING_INDEX(i + sizeof(wb_data_t));
+				}
 			}
 		}
 		
