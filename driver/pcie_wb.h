@@ -17,7 +17,7 @@
 #define WINDOW_OFFSET_LOW	20
 
 #define WINDOW_HIGH	0xFFFF0000UL
-#define WINDOW_LOW	0x0000FFFFUL
+#define WINDOW_LOW	0x0000FFFCUL
 
 /* One per BAR */
 struct pcie_wb_resource {
@@ -31,9 +31,12 @@ struct pcie_wb_resource {
 struct pcie_wb_dev {
 	struct pci_dev* pci_dev;
 	struct pcie_wb_resource pci_res[2];
+	int    pci_irq[4];
+	
 	struct wishbone wb;
-	int    pci_irq[4];			/* IRQ from PCI config reg */
+	struct mutex mutex; /* only one user can open a cycle at a time */
 	unsigned int window_offset;
+	unsigned int low_addr, width, shift;
 };
 
 #endif

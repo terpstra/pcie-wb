@@ -1,6 +1,7 @@
 #include <linux/module.h>
 
 #include <linux/fs.h>
+#include <linux/aio.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/major.h>
@@ -9,7 +10,9 @@
 #include <linux/stat.h>
 #include <linux/init.h>
 #include <linux/poll.h>
+#include <linux/socket.h>
 #include <linux/device.h>
+#include <linux/sched.h>
 
 #include "wishbone.h"
 
@@ -22,14 +25,143 @@ static DEFINE_MUTEX(wishbone_mutex);
 static struct class *wishbone_class;
 static dev_t wishbone_dev_first;
 
+/* Compiler should be able to optimize this to one inlined instruction */
+static inline wb_data_t eb_to_cpu(unsigned char* x)
+{
+	switch (sizeof(wb_data_t)) {
+	case 8: return be64_to_cpu(*(wb_data_t*)x);
+	case 4: return be32_to_cpu(*(wb_data_t*)x);
+	case 2: return be16_to_cpu(*(wb_data_t*)x);
+	case 1: return *(wb_data_t*)x;
+	}
+}
+
+/* Compiler should be able to optimize this to one inlined instruction */
+static inline void eb_from_cpu(unsigned char* x, wb_data_t dat)
+{
+	switch (sizeof(wb_data_t)) {
+	case 8: *(wb_data_t*)x = cpu_to_be64(dat);
+	case 4: *(wb_data_t*)x = cpu_to_be32(dat);
+	case 2: *(wb_data_t*)x = cpu_to_be16(dat);
+	case 1: *(wb_data_t*)x = dat;
+	}
+}
+
+static void etherbone_process(struct etherbone_context* context)
+{
+	struct wishbone *wb;
+	const struct wishbone_operations *wops;
+	unsigned int size, left, i, record_len = 0;
+	unsigned char *buf;
+	
+	if (context->state == header) {
+		if (context->received < 8) {
+			/* no-op */
+			return;
+		}
+		
+		context->buf[0] = 0x4E;
+		context->buf[1] = 0x6F;
+		context->buf[2] = 0x12; /* V.1 Probe-Response */
+		context->buf[3] = (sizeof(wb_addr_t)<<4) | sizeof(wb_data_t);
+		/* Echo back bytes 4-7, the probe identifier */
+		context->processed = 8;
+		context->state = idle;
+	}
+	
+	buf = &context->buf[0];
+	wb = context->wishbone;
+	wops = wb->wops;
+	
+	i = RING_INDEX(context->processed);
+	size = RING_PROC_LEN(context);
+	
+	for (left = size; left >= 4; left -= record_len) {
+		unsigned int record_len;
+		unsigned char flags, be, wcount, rcount;
+		
+		/* Determine record size */
+		flags  = buf[i+0];
+		be     = buf[i+1];
+		wcount = buf[i+2];
+		rcount = buf[i+3];
+		
+		record_len = 1 + wcount + rcount + (wcount > 0) + (rcount > 0);
+		record_len *= sizeof(wb_data_t);
+		
+		if (left < record_len) break;
+		
+		/* Configure byte enable and raise cycle line */
+		wops->byteenable(wb, be);
+		if (context->state == idle) {
+			wops->cycle(wb, 1);
+			context->state = cycle;
+		}
+
+		/* Process the writes */
+		if (wcount > 0) {
+			wb_addr_t base_address;
+			unsigned char j;
+			int wff = flags & ETHERBONE_WFF;
+			
+			/* Erase the header */
+			eb_from_cpu(buf+i, 0);
+			i = RING_INDEX(i + sizeof(wb_data_t));
+			base_address = eb_to_cpu(buf+i);
+			
+			for (j = wcount; j > 0; --j) {
+				eb_from_cpu(buf+i, 0);
+				i = RING_INDEX(i + sizeof(wb_data_t));
+				wops->write(wb, base_address, eb_to_cpu(buf+i));
+				
+				if (!wff) base_address += sizeof(wb_data_t);
+			}
+		}
+		
+		buf[i+0] = (flags & ETHERBONE_CYC) | 
+		           (((flags & ETHERBONE_RFF) != 0) ? ETHERBONE_WFF : 0) |
+		           (((flags & ETHERBONE_BCA) != 0) ? ETHERBONE_WCA : 0);
+		buf[i+1] = be;
+		buf[i+2] = rcount; /* rcount -> wcount */
+		buf[i+3] = 0;
+		
+		if (rcount > 0) {
+			unsigned char j;
+			
+			/* Move past header, and leave BaseRetAddr intact */
+			i = RING_INDEX(i + sizeof(wb_data_t) + sizeof(wb_data_t));
+			
+			for (j = rcount; j > 0; --j) {
+				eb_from_cpu(buf+i, wops->read(wb, eb_to_cpu(buf+i)));
+				i = RING_INDEX(i + sizeof(wb_data_t));
+			}
+		}
+		
+		if ((flags & ETHERBONE_CYC) == 0) {
+			wops->cycle(wb, 0);
+			context->state = idle;
+		}
+	}
+	
+	context->processed = RING_POS(context->processed + size - left);
+}
+
 static int char_open(struct inode *inode, struct file *filep)
 {	
-	struct etherbone_context* context;
+	struct etherbone_context *context;
 	
-	context = kzalloc(sizeof(struct etherbone_context), GFP_KERNEL);
+	context = kmalloc(sizeof(struct etherbone_context), GFP_KERNEL);
 	if (!context) return -ENOMEM;
 	
 	context->wishbone = container_of(inode->i_cdev, struct wishbone, cdev);
+	context->fasync = 0;
+	mutex_init(&context->mutex);
+	init_waitqueue_head(&context->waitq);
+	context->state = header;
+	context->sent = 0;
+	context->processed = 0;
+	context->received = 0;
+	
 	filep->private_data = context;
 	
 	return 0;
@@ -37,23 +169,101 @@ static int char_open(struct inode *inode, struct file *filep)
 
 static int char_release(struct inode *inode, struct file *filep)
 {
-	kfree(filep->private_data);
+	struct etherbone_context *context = filep->private_data;
+	
+	/* Did the bad user forget to drop the cycle line? */
+	if (context->state == cycle) {
+		context->wishbone->wops->cycle(context->wishbone, 0);
+	}
+	
+	kfree(context);
 	return 0;
 }
 
 static ssize_t char_aio_read(struct kiocb *iocb, const struct iovec *iov, unsigned long nr_segs, loff_t pos)
 {
-	return 0;
+	struct file *filep = iocb->ki_filp;
+	struct etherbone_context *context = filep->private_data;
+	unsigned int len, iov_len, ring_len, buf_len;
+	
+	iov_len = iov_length(iov, nr_segs);
+	
+	mutex_lock(&context->mutex);
+	
+	ring_len = RING_READ_LEN(context);
+	len = max_t(unsigned int, ring_len, iov_len);
+	
+	/* How far till we must wrap?  */
+	buf_len = sizeof(context->buf) - context->sent;
+	
+	if (buf_len < len) {
+		memcpy_toiovecend(iov, RING_POINTER(context, sent), 0, buf_len);
+		memcpy_toiovecend(iov, &context->buf[0],            buf_len, len-buf_len);
+	} else {
+		memcpy_toiovecend(iov, RING_POINTER(context, sent), 0, len);
+	}
+	context->sent = RING_POS(context->sent + len);
+	
+	/* Wake-up polling descriptors */
+	wake_up_interruptible(&context->waitq);
+	kill_fasync(&context->fasync, SIGIO, POLL_OUT);
+	
+	mutex_unlock(&context->mutex);
+	
+	return len;
 }
 
 static ssize_t char_aio_write(struct kiocb *iocb, const struct iovec *iov, unsigned long nr_segs, loff_t pos)
 {
-	return 0;
+	struct file *filep = iocb->ki_filp;
+	struct etherbone_context *context = filep->private_data;
+	unsigned int len, iov_len, ring_len, buf_len;
+	
+	iov_len = iov_length(iov, nr_segs);
+	
+	mutex_lock(&context->mutex);
+	
+	ring_len = RING_WRITE_LEN(context);
+	len = max_t(unsigned int, ring_len, iov_len);
+	
+	/* How far till we must wrap?  */
+	buf_len = sizeof(context->buf) - context->received;
+	
+	if (buf_len < len) {
+		memcpy_fromiovecend(RING_POINTER(context, received), iov, 0, buf_len);
+		memcpy_fromiovecend(&context->buf[0],                iov, buf_len, len-buf_len);
+	} else {
+		memcpy_fromiovecend(RING_POINTER(context, received), iov, 0, len);
+	}
+	context->received = RING_POS(context->received + len);
+	
+	/* Process buffers */
+	etherbone_process(context);
+	
+	/* Wake-up polling descriptors */
+	wake_up_interruptible(&context->waitq);
+	kill_fasync(&context->fasync, SIGIO, POLL_IN);
+	
+	mutex_unlock(&context->mutex);
+	
+	return len;
 }
 
-static unsigned int char_poll(struct file *filp, poll_table *wait)
+static unsigned int char_poll(struct file *filep, poll_table *wait)
 {
-	return 0;
+	unsigned int mask = 0;
+	struct etherbone_context *context = filep->private_data;
+	
+	poll_wait(filep, &context->waitq, wait);
+	
+	mutex_lock(&context->mutex);
+	
+	if (RING_READ_LEN (context) != 0) mask |= POLLIN  | POLLRDNORM;
+	if (RING_WRITE_LEN(context) != 0) mask |= POLLOUT | POLLWRNORM;
+	
+	mutex_unlock(&context->mutex);
+	
+	return mask;
 }
 
 static int char_fasync(int fd, struct file *file, int on)

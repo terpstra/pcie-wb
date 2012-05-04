@@ -17,7 +17,6 @@
 
 KERNELDIR ?= /usr/src/linux-3.2.14 #/common/usr/embedded/kernel/scu/linux-2.6.33.6/
 ifneq ($(KERNELRELEASE),)
-CFLAGS_pcie_wb.o = -msse2
 	obj-m	:= pcie_wb.o wishbone.o
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
