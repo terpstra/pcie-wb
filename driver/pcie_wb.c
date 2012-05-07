@@ -127,6 +127,7 @@ static void wb_write(struct wishbone* wb, wb_addr_t addr, wb_data_t data)
 
 static wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 {
+	wb_data_t out;
 	struct pcie_wb_dev* dev;
 	unsigned char* control;
 	unsigned char* window;
@@ -142,20 +143,27 @@ static wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 		dev->window_offset = window_offset;
 	}
 	
-	rmb();	// has to be executed before reading
-	
 	switch (dev->width) {
 	case 4:	
 		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread32(0x%x)\n", addr);
-		return ((wb_data_t)ioread32(window + (addr & WINDOW_LOW)));
+		out = ((wb_data_t)ioread32(window + (addr & WINDOW_LOW)));
+		break;
 	case 2: 
 		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread32(0x%x)\n", addr + dev->low_addr);
-		return ((wb_data_t)ioread16(window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+		out = ((wb_data_t)ioread16(window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+		break;
 	case 1: 
 		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread32(0x%x)\n", addr + dev->low_addr);
-		return ((wb_data_t)ioread8 (window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+		out = ((wb_data_t)ioread8 (window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+		break;
+	default: // technically should be unreachable
+		out = 0;
+		break;
 	}
-	return 0;
+
+	mb(); /* ensure serial ordering of non-posted operations for wishbone */
+	
+	return out;
 }
 
 static wb_data_t wb_read_cfg(struct wishbone *wb, wb_addr_t addr)
