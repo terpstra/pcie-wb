@@ -40,10 +40,10 @@ static inline wb_data_t eb_to_cpu(unsigned char* x)
 static inline void eb_from_cpu(unsigned char* x, wb_data_t dat)
 {
 	switch (sizeof(wb_data_t)) {
-	case 8: *(wb_data_t*)x = cpu_to_be64(dat);
-	case 4: *(wb_data_t*)x = cpu_to_be32(dat);
-	case 2: *(wb_data_t*)x = cpu_to_be16(dat);
-	case 1: *(wb_data_t*)x = dat;
+	case 8: *(wb_data_t*)x = cpu_to_be64(dat); break;
+	case 4: *(wb_data_t*)x = cpu_to_be32(dat); break;
+	case 2: *(wb_data_t*)x = cpu_to_be16(dat); break;
+	case 1: *(wb_data_t*)x = dat;              break;
 	}
 }
 
