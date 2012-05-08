@@ -25,6 +25,9 @@ else
 all:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD)
 
+install:
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
+
 endif
 
 clean:
