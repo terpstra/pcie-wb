@@ -202,6 +202,7 @@ static ssize_t char_aio_read(struct kiocb *iocb, const struct iovec *iov, unsign
 	unsigned int len, iov_len, ring_len, buf_len;
 	
 	iov_len = iov_length(iov, nr_segs);
+	if (unlikely(iov_len == 0)) return 0;
 	
 	mutex_lock(&context->mutex);
 	
@@ -209,7 +210,7 @@ static ssize_t char_aio_read(struct kiocb *iocb, const struct iovec *iov, unsign
 	len = min_t(unsigned int, ring_len, iov_len);
 	
 	/* How far till we must wrap?  */
-	buf_len = sizeof(context->buf) - context->sent;
+	buf_len = sizeof(context->buf) - RING_INDEX(context->sent);
 	
 	if (buf_len < len) {
 		memcpy_toiovecend(iov, RING_POINTER(context, sent), 0, buf_len);
@@ -238,6 +239,7 @@ static ssize_t char_aio_write(struct kiocb *iocb, const struct iovec *iov, unsig
 	unsigned int len, iov_len, ring_len, buf_len;
 	
 	iov_len = iov_length(iov, nr_segs);
+	if (unlikely(iov_len == 0)) return 0;
 	
 	mutex_lock(&context->mutex);
 	
@@ -245,7 +247,7 @@ static ssize_t char_aio_write(struct kiocb *iocb, const struct iovec *iov, unsig
 	len = min_t(unsigned int, ring_len, iov_len);
 	
 	/* How far till we must wrap?  */
-	buf_len = sizeof(context->buf) - context->received;
+	buf_len = sizeof(context->buf) - RING_INDEX(context->received);
 	
 	if (buf_len < len) {
 		memcpy_fromiovecend(RING_POINTER(context, received), iov, 0, buf_len);
