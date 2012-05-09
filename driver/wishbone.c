@@ -220,11 +220,11 @@ static ssize_t char_aio_read(struct kiocb *iocb, const struct iovec *iov, unsign
 	}
 	context->sent = RING_POS(context->sent + len);
 	
+	mutex_unlock(&context->mutex);
+	
 	/* Wake-up polling descriptors */
 	wake_up_interruptible(&context->waitq);
 	kill_fasync(&context->fasync, SIGIO, POLL_OUT);
-	
-	mutex_unlock(&context->mutex);
 	
 	if (len == 0 && (filep->f_flags & O_NONBLOCK) != 0)
 		return -EAGAIN;
@@ -260,11 +260,11 @@ static ssize_t char_aio_write(struct kiocb *iocb, const struct iovec *iov, unsig
 	/* Process buffers */
 	etherbone_process(context);
 	
+	mutex_unlock(&context->mutex);
+	
 	/* Wake-up polling descriptors */
 	wake_up_interruptible(&context->waitq);
 	kill_fasync(&context->fasync, SIGIO, POLL_IN);
-	
-	mutex_unlock(&context->mutex);
 	
 	if (len == 0 && (filep->f_flags & O_NONBLOCK) != 0)
 		return -EAGAIN;
