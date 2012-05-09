@@ -168,21 +168,24 @@ static wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 
 static wb_data_t wb_read_cfg(struct wishbone *wb, wb_addr_t addr)
 {
+	wb_data_t out;
 	struct pcie_wb_dev* dev;
 	unsigned char* control;
 	
 	dev = container_of(wb, struct pcie_wb_dev, wb);
 	control = dev->pci_res[0].addr;
 	
-	rmb();	// has to be executed before reading
-	
 	switch (addr) {
-	case 0:  return ioread32(control + ERROR_FLAG_HIGH);
-	case 4:  return ioread32(control + ERROR_FLAG_LOW);
-	case 8:  return 0;        // ioread32(control + SDWB_ADDRESS_HIGH);
-	case 12: return 0x300000; // ioread32(control + SDWB_ADDRESS_LOW);
-	default: return 0;
+	case 0:  out = ioread32(control + ERROR_FLAG_HIGH);   break;
+	case 4:  out = ioread32(control + ERROR_FLAG_LOW);    break;
+	case 8:  out = ioread32(control + SDWB_ADDRESS_HIGH); break;
+	case 12: out = ioread32(control + SDWB_ADDRESS_LOW);  break;
+	default: out = 0; break;
 	}
+	
+	mb(); /* ensure serial ordering of non-posted operations for wishbone */
+	
+	return out;
 }
 
 static const struct wishbone_operations wb_ops = {
