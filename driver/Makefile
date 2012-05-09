@@ -15,7 +15,7 @@
 
 
 
-KERNELDIR ?= /usr/src/linux-3.2.14 #/common/usr/embedded/kernel/scu/linux-2.6.33.6/
+KERNELDIR ?= /lib/modules/`uname -r`/build #/usr/src/linux-3.2.14 #/common/usr/embedded/kernel/scu/linux-2.6.33.6/
 ifneq ($(KERNELRELEASE),)
 	obj-m	:= pcie_wb.o wishbone.o
 else
