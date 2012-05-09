@@ -334,7 +334,7 @@ int wishbone_register(struct wishbone* wb)
 			break;
 		} else {
 			/* Run out of minors? */
-			if (MINOR(dev) - MINOR(wishbone_dev_first) == max_devices) goto fail_out;
+			if (MINOR(dev) - MINOR(wishbone_dev_first) == max_devices-1) goto fail_out;
 			
 			/* Try the next minor */
 			dev = MKDEV(MAJOR(dev), MINOR(dev) + 1);
