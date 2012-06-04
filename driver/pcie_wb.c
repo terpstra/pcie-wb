@@ -39,6 +39,9 @@ static void wb_cycle(struct wishbone* wb, int on)
 	
 	if (on) mutex_lock(&dev->mutex);
 	
+	if (unlikely(debug))
+		printk(KERN_ALERT PCIE_WB ": cycle(%d)\n", on);
+	
 	iowrite32(on?0x80000000UL:0, control + CONTROL_REGISTER_HIGH);
 	
 	if (!on) mutex_unlock(&dev->mutex);

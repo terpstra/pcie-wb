@@ -152,7 +152,7 @@ static void etherbone_process(struct etherbone_context* context)
 			}
 		}
 		
-		if ((flags & ETHERBONE_CYC) == 0) {
+		if ((flags & ETHERBONE_CYC) != 0) {
 			wops->cycle(wb, 0);
 			context->state = idle;
 		}
