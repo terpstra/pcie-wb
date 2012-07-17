@@ -14,10 +14,10 @@
 #OBJDUMP =$(CROSS_COMPILE)objdump
 
 
-
-KERNELDIR ?= /lib/modules/`uname -r`/build #/usr/src/linux-3.2.14 #/common/usr/embedded/kernel/scu/linux-2.6.33.6/
+KERNELVER ?= `uname -r`
+KERNELDIR ?= /lib/modules/$(KERNELVER)/build
 ifneq ($(KERNELRELEASE),)
-	obj-m	:= pcie_wb.o wishbone.o
+	obj-m	:= pcie_wb.o wishbone.o spec_wb.o
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 	PWD       := $(shell pwd)

@@ -16,7 +16,7 @@
 #include <asm/spinlock.h>
 #include <asm/byteorder.h>
 
-#include "pcie_wb.h"
+#include "spec_wb.h"
 #include "wishbone.h"
 
 #if defined(__BIG_ENDIAN)
@@ -31,27 +31,13 @@ static unsigned int debug = 0;
 
 static void wb_cycle(struct wishbone* wb, int on)
 {
-	struct pcie_wb_dev* dev;
-	unsigned char* control;
-	
-	dev = container_of(wb, struct pcie_wb_dev, wb);
-	control = dev->pci_res[0].addr;
-	
-	if (on) mutex_lock(&dev->mutex);
-	
-	if (unlikely(debug))
-		printk(KERN_ALERT PCIE_WB ": cycle(%d)\n", on);
-	
-	iowrite32(on?0x80000000UL:0, control + CONTROL_REGISTER_HIGH);
-	
-	if (!on) mutex_unlock(&dev->mutex);
 }
 
 static void wb_byteenable(struct wishbone* wb, unsigned char be)
 {
-	struct pcie_wb_dev* dev;
+	struct spec_wb_dev* dev;
 	
-	dev = container_of(wb, struct pcie_wb_dev, wb);
+	dev = container_of(wb, struct spec_wb_dev, wb);
 	
 	switch (be) {
 	case 0x1:
@@ -97,33 +83,25 @@ static void wb_byteenable(struct wishbone* wb, unsigned char be)
 
 static void wb_write(struct wishbone* wb, wb_addr_t addr, wb_data_t data)
 {
-	struct pcie_wb_dev* dev;
-	unsigned char* control;
+	struct spec_wb_dev* dev;
 	unsigned char* window;
-	wb_addr_t window_offset;
 	
-	dev = container_of(wb, struct pcie_wb_dev, wb);
-	control = dev->pci_res[0].addr;
-	window = dev->pci_res[1].addr;
-	
-	window_offset = addr & WINDOW_HIGH;
-	if (window_offset != dev->window_offset) {
-		iowrite32(window_offset, control + WINDOW_OFFSET_LOW);
-		dev->window_offset = window_offset;
-	}
+	dev = container_of(wb, struct spec_wb_dev, wb);
+	window = (unsigned char*)dev->pci_res[WB_BAR].addr + WB_OFFSET;
+	addr = (addr & WB_LOW) + dev->low_addr;
 	
 	switch (dev->width) {
 	case 4:	
-		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": iowrite32(0x%x, 0x%x)\n", data, addr);
-		iowrite32(data, window + (addr & WINDOW_LOW)); 
+		if (unlikely(debug)) printk(KERN_ALERT SPEC_WB ": iowrite32(0x%x, 0x%x)\n", data, addr);
+		writel(data, window + addr); 
 		break;
 	case 2: 
-		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": iowrite16(0x%x, 0x%x)\n", data >> dev->shift, addr + dev->low_addr);
-		iowrite16(data >> dev->shift, window + (addr & WINDOW_LOW) + dev->low_addr); 
+		if (unlikely(debug)) printk(KERN_ALERT SPEC_WB ": iowrite16(0x%x, 0x%x)\n", data >> dev->shift, addr);
+		iowrite16(data >> dev->shift, window + addr); 
 		break;
 	case 1: 
-		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": iowrite8(0x%x, 0x%x)\n", data >> dev->shift, addr + dev->low_addr);
-		iowrite8 (data >> dev->shift, window + (addr & WINDOW_LOW) + dev->low_addr); 
+		if (unlikely(debug)) printk(KERN_ALERT SPEC_WB ": iowrite8(0x%x, 0x%x)\n", data >> dev->shift, addr);
+		iowrite8 (data >> dev->shift, window + addr); 
 		break;
 	}
 }
@@ -131,33 +109,25 @@ static void wb_write(struct wishbone* wb, wb_addr_t addr, wb_data_t data)
 static wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 {
 	wb_data_t out;
-	struct pcie_wb_dev* dev;
-	unsigned char* control;
+	struct spec_wb_dev* dev;
 	unsigned char* window;
-	wb_addr_t window_offset;
 	
-	dev = container_of(wb, struct pcie_wb_dev, wb);
-	control = dev->pci_res[0].addr;
-	window = dev->pci_res[1].addr;
-	
-	window_offset = addr & WINDOW_HIGH;
-	if (window_offset != dev->window_offset) {
-		iowrite32(window_offset, control + WINDOW_OFFSET_LOW);
-		dev->window_offset = window_offset;
-	}
+	dev = container_of(wb, struct spec_wb_dev, wb);
+	window = (unsigned char*)dev->pci_res[WB_BAR].addr + WB_OFFSET;
+	addr = (addr & WB_LOW) + dev->low_addr;
 	
 	switch (dev->width) {
 	case 4:	
-		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread32(0x%x)\n", addr);
-		out = ((wb_data_t)ioread32(window + (addr & WINDOW_LOW)));
+		if (unlikely(debug)) printk(KERN_ALERT SPEC_WB ": ioread32(0x%x)\n", addr);
+		out = ((wb_data_t)readl(window + addr));
 		break;
 	case 2: 
-		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread16(0x%x)\n", addr + dev->low_addr);
-		out = ((wb_data_t)ioread16(window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+		if (unlikely(debug)) printk(KERN_ALERT SPEC_WB ": ioread16(0x%x)\n", addr);
+		out = ((wb_data_t)ioread16(window + addr)) << dev->shift;
 		break;
 	case 1: 
-		if (unlikely(debug)) printk(KERN_ALERT PCIE_WB ": ioread8(0x%x)\n", addr + dev->low_addr);
-		out = ((wb_data_t)ioread8 (window + (addr & WINDOW_LOW) + dev->low_addr)) << dev->shift;
+		if (unlikely(debug)) printk(KERN_ALERT SPEC_WB ": ioread8(0x%x)\n", addr);
+		out = ((wb_data_t)ioread8 (window + addr)) << dev->shift;
 		break;
 	default: // technically should be unreachable
 		out = 0;
@@ -172,17 +142,12 @@ static wb_data_t wb_read(struct wishbone* wb, wb_addr_t addr)
 static wb_data_t wb_read_cfg(struct wishbone *wb, wb_addr_t addr)
 {
 	wb_data_t out;
-	struct pcie_wb_dev* dev;
-	unsigned char* control;
-	
-	dev = container_of(wb, struct pcie_wb_dev, wb);
-	control = dev->pci_res[0].addr;
 	
 	switch (addr) {
-	case 0:  out = ioread32(control + ERROR_FLAG_HIGH);   break;
-	case 4:  out = ioread32(control + ERROR_FLAG_LOW);    break;
-	case 8:  out = ioread32(control + SDWB_ADDRESS_HIGH); break;
-	case 12: out = ioread32(control + SDWB_ADDRESS_LOW);  break;
+	case 0:  out = 0; break;
+	case 4:  out = 0; break;
+	case 8:  out = 0; break;
+	case 12: out = 0x30000;  break;
 	default: out = 0; break;
 	}
 	
@@ -206,7 +171,7 @@ static irq_handler_t irq_handler(int irq, void *dev_id, struct pt_regs *regs)
 }
 #endif
 
-static int setup_bar(struct pci_dev* pdev, struct pcie_wb_resource* res, int bar)
+static int setup_bar(struct pci_dev* pdev, struct spec_wb_resource* res, int bar)
 {
 	/*init of pci_res0 */
 	res->start = pci_resource_start(pdev, bar);
@@ -214,24 +179,24 @@ static int setup_bar(struct pci_dev* pdev, struct pcie_wb_resource* res, int bar
 	res->size = res->end - res->start + 1;
 	
 	if (debug)
-		printk(KERN_ALERT PCIE_WB "/BAR%d  0x%lx - 0x%lx\n", bar, res->start, res->end);
+		printk(KERN_ALERT SPEC_WB "/BAR%d  0x%lx - 0x%lx\n", bar, res->start, res->end);
 
 	// is_mem = pci_resource_flags(pdev, 0);
  	// is_mem = is_mem & IORESOURCE_MEM;
 
-	if (!request_mem_region(res->start, res->size, PCIE_WB)) {
-		printk(KERN_ALERT PCIE_WB "/BAR%d: request_mem_region failed\n", bar);
+	if (!request_mem_region(res->start, res->size, SPEC_WB)) {
+		printk(KERN_ALERT SPEC_WB "/BAR%d: request_mem_region failed\n", bar);
 		return -ENOMEM;
 	}
 	
 	res->addr = ioremap_nocache(res->start, res->size);
 	if (debug)
-		printk(KERN_ALERT PCIE_WB "/BAR%d: ioremap to %lx\n", bar, (unsigned long)res->addr);
+		printk(KERN_ALERT SPEC_WB "/BAR%d: ioremap to %lx\n", bar, (unsigned long)res->addr);
 	
 	return 0;
 }
 
-static void destroy_bar(struct pcie_wb_resource* res)
+static void destroy_bar(struct spec_wb_resource* res)
 {
 	if (debug)
 		printk(KERN_ALERT "released io 0x%lx\n", res->start);
@@ -249,25 +214,24 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	 * register char dev
 	 */
 	u8 revision;
-	struct pcie_wb_dev *dev;
-	unsigned char* control;
+	struct spec_wb_dev *dev;
 
 	pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
-	if (revision != 0x01) {
-		printk(KERN_ALERT PCIE_WB ": revision ID wrong!\n");
+	if (revision != 0x03) {
+		printk(KERN_ALERT SPEC_WB ": revision ID wrong!\n");
 		goto fail_out;
 	}
 
-	dev = kmalloc(sizeof(struct pcie_wb_dev), GFP_KERNEL);
+	dev = kmalloc(sizeof(struct spec_wb_dev), GFP_KERNEL);
 	if (!dev) {
-		printk(KERN_ALERT PCIE_WB ": could not allocate memory for pcie_wb_dev structure!\n");
+		printk(KERN_ALERT SPEC_WB ": could not allocate memory for spec_wb_dev structure!\n");
 		goto fail_out;
 	}
 	
 	/* Initialize structure */
 	dev->pci_dev = pdev;
 	dev->wb.wops = &wb_ops;
-	strcpy(dev->wb.name, PCIE_WB "%d");
+	strcpy(dev->wb.name, SPEC_WB "%d");
 	dev->wb.parent = &pdev->dev;
 	mutex_init(&dev->mutex);
 	dev->window_offset = 0;
@@ -279,26 +243,24 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	/* enable message signaled interrupts */
 	if (pci_enable_msi(pdev) != 0) {
 		/* resort to legacy interrupts */
-		printk(KERN_ALERT PCIE_WB ": could not enable MSI interrupting\n");
+		printk(KERN_ALERT SPEC_WB ": could not enable MSI interrupting\n");
 		goto fail_free;
 	}
 
 	if (setup_bar(pdev, &dev->pci_res[0], 0) < 0) goto fail_msi;
-	if (setup_bar(pdev, &dev->pci_res[1], 1) < 0) goto fail_bar0;
+	if (setup_bar(pdev, &dev->pci_res[1], 2) < 0) goto fail_bar0;
+	if (setup_bar(pdev, &dev->pci_res[2], 4) < 0) goto fail_bar1;
 	
 	if (wishbone_register(&dev->wb) < 0) {
-		printk(KERN_ALERT PCIE_WB ": could not register wishbone bus\n");
-		goto fail_bar1;
+		printk(KERN_ALERT SPEC_WB ": could not register wishbone bus\n");
+		goto fail_bar2;
 	}
 	
-	/* Initialize device */
-	control = dev->pci_res[0].addr;
-	iowrite32(0, control + WINDOW_OFFSET_LOW);
-	iowrite32(0, control + CONTROL_REGISTER_HIGH);
-
 	return pci_enable_device(pdev);
 
 	/* cleaning up */
+fail_bar2:
+	destroy_bar(&dev->pci_res[2]);
 fail_bar1:
 	destroy_bar(&dev->pci_res[1]);
 fail_bar0:
@@ -317,11 +279,12 @@ static void remove(struct pci_dev *pdev)
 	 * like call release_mem_region();
 	 */
 
-	struct pcie_wb_dev *dev;
+	struct spec_wb_dev *dev;
 	
 	dev = pci_get_drvdata(pdev);
 	wishbone_unregister(&dev->wb);
 	
+	destroy_bar(&dev->pci_res[2]);
 	destroy_bar(&dev->pci_res[1]);
 	destroy_bar(&dev->pci_res[0]);
 	
@@ -331,34 +294,34 @@ static void remove(struct pci_dev *pdev)
 }
 
 static struct pci_device_id ids[] = {
-	{ PCI_DEVICE(PCIE_WB_VENDOR_ID, PCIE_WB_DEVICE_ID), },
+	{ PCI_DEVICE(SPEC_WB_VENDOR_ID, SPEC_WB_DEVICE_ID), },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, ids);
 
-static struct pci_driver pcie_wb_driver = {
-	.name = PCIE_WB,
+static struct pci_driver spec_wb_driver = {
+	.name = SPEC_WB,
 	.id_table = ids,
 	.probe = probe,
 	.remove = remove,
 };
 
-static int __init pcie_wb_init(void)
+static int __init spec_wb_init(void)
 {
-	return pci_register_driver(&pcie_wb_driver);
+	return pci_register_driver(&spec_wb_driver);
 }
 
-static void __exit pcie_wb_exit(void)
+static void __exit spec_wb_exit(void)
 {	
-	pci_unregister_driver(&pcie_wb_driver);
+	pci_unregister_driver(&spec_wb_driver);
 }
 
-MODULE_AUTHOR("Stefan Rauch <s.rauch@gsi.de>");
-MODULE_DESCRIPTION("GSI Altera-Wishbone bridge driver");
+MODULE_AUTHOR("Wesley W. Terpstra <w.tersptra@gsi.de>");
+MODULE_DESCRIPTION("CERN SPEC card bridge");
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "Enable debugging information");
 MODULE_LICENSE("GPL");
-MODULE_VERSION(PCIE_WB_VERSION);
+MODULE_VERSION(SPEC_WB_VERSION);
 
-module_init(pcie_wb_init);
-module_exit(pcie_wb_exit);
+module_init(spec_wb_init);
+module_exit(spec_wb_exit);
