@@ -150,6 +150,8 @@ static void etherbone_process(struct etherbone_context* context)
 					i = RING_INDEX(i + sizeof(wb_data_t));
 				}
 			}
+		} else {
+			i = RING_INDEX(i + sizeof(wb_data_t));
 		}
 		
 		if ((flags & ETHERBONE_CYC) != 0) {
