@@ -31,6 +31,16 @@ static unsigned int debug = 0;
 
 static void wb_cycle(struct wishbone* wb, int on)
 {
+	struct spec_wb_dev* dev;
+	
+	dev = container_of(wb, struct spec_wb_dev, wb);
+	
+	if (on) mutex_lock(&dev->mutex);
+	
+	if (unlikely(debug))
+		printk(KERN_ALERT SPEC_WB ": cycle(%d)\n", on);
+	
+	if (!on) mutex_unlock(&dev->mutex);
 }
 
 static void wb_byteenable(struct wishbone* wb, unsigned char be)
