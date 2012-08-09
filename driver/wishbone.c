@@ -91,11 +91,11 @@ static void etherbone_process(struct etherbone_context* context)
 		if (left < record_len) break;
 		
 		/* Configure byte enable and raise cycle line */
-		wops->byteenable(wb, be);
 		if (context->state == idle) {
 			wops->cycle(wb, 1);
 			context->state = cycle;
 		}
+		wops->byteenable(wb, be);
 
 		/* Process the writes */
 		if (wcount > 0) {
